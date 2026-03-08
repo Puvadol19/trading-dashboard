@@ -1,0 +1,10 @@
+{
+  "name": "Slope Tick Visualizer",
+  "short_name": "SlopeViz",
+  "description": "Real-time trading dashboard with OANDA S5 data",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#0a0e17",
+  "icons": []
+}
