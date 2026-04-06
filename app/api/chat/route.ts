@@ -48,45 +48,38 @@ export async function POST(req: NextRequest) {
 
 Answer questions using this live data. Be concise. Respond in the same language the user uses (Thai or English). Always note this is analysis, not financial advice.`;
 
-  const apiKey = process.env.OPENROUTER_API_KEY ?? "";
+  const apiKey = process.env.GROQ_API_KEY ?? "";
 
   if (!apiKey) {
     return new Response(
-      `data: ${JSON.stringify({ error: "OPENROUTER_API_KEY ยังไม่ได้ตั้งค่า — ไปที่ Settings > Vars แล้วเพิ่ม OPENROUTER_API_KEY" })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "GROQ_API_KEY ยังไม่ได้ตั้งค่า — ไปที่ Settings > Vars" } }] })}\n\ndata: [DONE]\n\n`,
       { status: 200, headers: { "Content-Type": "text/event-stream" } }
     );
   }
 
-  // Try models in order until one works (verified from OpenRouter API 2026-04-06)
-  const FREE_MODELS = [
-    "bytedance-seed/seed-2.0-lite",
-    "qwen/qwen3-235b-a22b:free",
-    "qwen/qwen3-30b-a3b:free",
-    "deepseek/deepseek-chat-v3-0324:free",
-    "meta-llama/llama-4-maverick:free",
-    "meta-llama/llama-4-scout:free",
-    "deepseek/deepseek-r1:free",
-    "google/gemma-3-27b-it:free",
+  // Groq free models — try in order if rate limited
+  const GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
+    "mixtral-8x7b-32768",
   ];
-
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
-    "HTTP-Referer": "https://trading-dashboard.vercel.app",
-    "X-Title": "Trading Dashboard AI",
-  };
 
   let response: Response | null = null;
   let lastError = "";
 
-  for (const model of FREE_MODELS) {
+  for (const model of GROQ_MODELS) {
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
         body: JSON.stringify({
           model,
           stream: true,
+          max_tokens: 1024,
           messages: [
             { role: "system", content: systemPrompt },
             ...messages,
@@ -103,19 +96,18 @@ Answer questions using this live data. Be concise. Respond in the same language 
       let detail = errText;
       try { detail = JSON.parse(errText)?.error?.message ?? errText; } catch { /* ok */ }
 
-      // 404 = model not found, 429 = rate limited — try next model
-      // Any other error (401, 402, 500...) = stop immediately
-      if (res.status !== 404 && res.status !== 429) {
+      // 429 = rate limited — try next model; others = stop
+      if (res.status !== 429) {
         return new Response(
-          `data: ${JSON.stringify({ choices: [{ delta: { content: `OpenRouter error ${res.status}: ${detail}` } }] })}\n\ndata: [DONE]\n\n`,
+          `data: ${JSON.stringify({ choices: [{ delta: { content: `Groq error ${res.status}: ${detail}` } }] })}\n\ndata: [DONE]\n\n`,
           { status: 200, headers: { "Content-Type": "text/event-stream" } }
         );
       }
-      lastError = `${model} (${res.status}): ${detail}`;
+      lastError = `${model} (429): rate limited`;
     } catch (fetchErr) {
       const msg = fetchErr instanceof Error ? fetchErr.message : "Network error";
       return new Response(
-        `data: ${JSON.stringify({ choices: [{ delta: { content: `เชื่อมต่อ OpenRouter ไม่ได้: ${msg}` } }] })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: `เชื่อมต่อ Groq ไม่ได้: ${msg}` } }] })}\n\ndata: [DONE]\n\n`,
         { status: 200, headers: { "Content-Type": "text/event-stream" } }
       );
     }
@@ -123,7 +115,7 @@ Answer questions using this live data. Be concise. Respond in the same language 
 
   if (!response) {
     return new Response(
-      `data: ${JSON.stringify({ choices: [{ delta: { content: `ไม่พบ model ที่ใช้งานได้: ${lastError}` } }] })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: `Groq rate limited ทุก model: ${lastError}` } }] })}\n\ndata: [DONE]\n\n`,
       { status: 200, headers: { "Content-Type": "text/event-stream" } }
     );
   }
