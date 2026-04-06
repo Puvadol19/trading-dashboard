@@ -1,10 +1,14 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Send, Bot, User, Loader2, Sparkles, RotateCcw } from "lucide-react";
 import type { CandleData, SlopeAnalysis, RSIData, MACDData, TickVelocity, MTFAnalysis } from "@/lib/types";
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
 
 interface AiChatPanelProps {
   instrument: string;
@@ -28,14 +32,6 @@ const QUICK_PROMPTS = [
   "What is the current trend?",
 ];
 
-function getMessageText(msg: { parts?: { type: string; text?: string }[] }): string {
-  if (!msg.parts || !Array.isArray(msg.parts)) return "";
-  return msg.parts
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("");
-}
-
 export function AiChatPanel({
   instrument,
   currentTick,
@@ -48,73 +44,126 @@ export function AiChatPanel({
   mtf,
   candles,
 }: AiChatPanelProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // Build live context to send with every message
-  const buildContext = () => ({
+  const buildContext = useCallback(() => ({
     instrument,
     currentPrice: currentTick?.bid ?? candles[candles.length - 1]?.close ?? 0,
     bid: currentTick?.bid ?? 0,
     ask: currentTick?.ask ?? 0,
     spread: currentTick ? (currentTick.ask - currentTick.bid) * 10000 : 0,
     slope: slope?.slope ?? null,
-    slopeDirection: slope ? (slope.slope > 0 ? "BULLISH" : slope.slope < 0 ? "BEARISH" : "SIDEWAYS") : "N/A",
+    slopeDirection: slope
+      ? slope.slope > 0 ? "BULLISH" : slope.slope < 0 ? "BEARISH" : "SIDEWAYS"
+      : "N/A",
     rsi: rsi?.rsi ?? null,
     macd: macd ? { macd: macd.macd, signal: macd.signal, histogram: macd.histogram } : null,
     tickVelocity: tickVelocity?.velocity ?? null,
     advice,
     adviceLevel,
     mtf: mtf
-      ? {
-          s5: mtf.s5?.slope ?? null,
-          m1: mtf.m1?.slope ?? null,
-          m5: mtf.m5?.slope ?? null,
-        }
+      ? { s5: mtf.s5?.slope ?? null, m1: mtf.m1?.slope ?? null, m5: mtf.m5?.slope ?? null }
       : null,
     recentCandles: candles.slice(-10).map((c) => ({
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      time: c.time,
+      open: c.open, high: c.high, low: c.low, close: c.close, time: c.time,
     })),
-  });
+  }), [instrument, currentTick, slope, rsi, macd, tickVelocity, advice, adviceLevel, mtf, candles]);
 
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      prepareSendMessagesRequest: ({ id, messages: msgs }) => ({
-        body: {
-          id,
-          messages: msgs,
-          context: buildContext(),
-        },
-      }),
-    }),
-  });
-
-  // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isLoading]);
 
-  const handleSend = () => {
-    const text = input.trim();
-    if (!text || status === "streaming" || status === "submitted") return;
-    sendMessage({ text });
+  const sendMessage = useCallback(async (text: string) => {
+    if (!text.trim() || isLoading) return;
+    setError(null);
+
+    const userMsg: Message = { id: Date.now().toString(), role: "user", content: text };
+    const assistantId = (Date.now() + 1).toString();
+    const assistantMsg: Message = { id: assistantId, role: "assistant", content: "" };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setIsLoading(true);
     setInput("");
-  };
+
+    abortRef.current = new AbortController();
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortRef.current.signal,
+        body: JSON.stringify({
+          messages: [...messages, userMsg].map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          context: buildContext(),
+        }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.body) throw new Error("No response body");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const data = trimmed.slice(5).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content + delta } : m
+                )
+              );
+            }
+          } catch {
+            // skip invalid JSON chunks
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setError("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+      setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, messages, buildContext]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      sendMessage(input);
     }
   };
 
-  const isLoading = status === "streaming" || status === "submitted";
+  const clearChat = () => {
+    abortRef.current?.abort();
+    setMessages([]);
+    setError(null);
+    setIsLoading(false);
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: "transparent" }}>
@@ -129,7 +178,13 @@ export function AiChatPanel({
             <p className="text-xs font-mono font-semibold text-foreground">AI Trading Analyst</p>
             <p className="text-[9px] text-muted-foreground font-mono">
               Live context: {instrument.replace("_", "/")} •{" "}
-              <span className={adviceLevel === "safe" ? "text-bullish" : adviceLevel === "danger" ? "text-bearish" : "text-yellow-400"}>
+              <span className={
+                adviceLevel === "safe"
+                  ? "text-green-400"
+                  : adviceLevel === "danger"
+                  ? "text-red-400"
+                  : "text-yellow-400"
+              }>
                 {adviceLevel.toUpperCase()}
               </span>
             </p>
@@ -137,7 +192,7 @@ export function AiChatPanel({
         </div>
         {messages.length > 0 && (
           <button
-            onClick={() => window.location.reload()}
+            onClick={clearChat}
             className="text-muted-foreground hover:text-foreground transition-colors p-1"
             title="Clear chat"
           >
@@ -149,16 +204,16 @@ export function AiChatPanel({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1">
         {messages.length === 0 ? (
-          /* Empty state */
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-2">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
               <Bot className="w-6 h-6 text-primary" />
             </div>
             <div>
               <p className="text-xs font-mono text-foreground mb-1">ถามอะไรเกี่ยวกับกราฟได้เลย</p>
-              <p className="text-[10px] text-muted-foreground font-mono">AI รู้ข้อมูล live ของ {instrument.replace("_", "/")} ทั้งหมด</p>
+              <p className="text-[10px] text-muted-foreground font-mono">
+                AI รู้ข้อมูล live ของ {instrument.replace("_", "/")} ทั้งหมด
+              </p>
             </div>
-            {/* Quick prompts */}
             <div className="flex flex-col gap-1.5 w-full">
               {QUICK_PROMPTS.map((prompt) => (
                 <button
@@ -176,35 +231,18 @@ export function AiChatPanel({
           </div>
         ) : (
           messages.map((msg) => {
-            const text = getMessageText(msg as Parameters<typeof getMessageText>[0]);
             const isUser = msg.role === "user";
             return (
-              <div
-                key={msg.id}
-                className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-              >
-                {/* Avatar */}
-                <div
-                  className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center mt-0.5 ${
-                    isUser ? "bg-primary/20" : "bg-secondary"
-                  }`}
-                >
-                  {isUser ? (
-                    <User className="w-3 h-3 text-primary" />
-                  ) : (
-                    <Bot className="w-3 h-3 text-muted-foreground" />
-                  )}
+              <div key={msg.id} className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+                <div className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center mt-0.5 ${isUser ? "bg-primary/20" : "bg-secondary"}`}>
+                  {isUser ? <User className="w-3 h-3 text-primary" /> : <Bot className="w-3 h-3 text-muted-foreground" />}
                 </div>
-
-                {/* Bubble */}
-                <div
-                  className={`max-w-[85%] rounded-xl px-3 py-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words ${
-                    isUser
-                      ? "bg-primary text-primary-foreground rounded-tr-sm"
-                      : "bg-card border border-border text-foreground rounded-tl-sm"
-                  }`}
-                >
-                  {text || (
+                <div className={`max-w-[85%] rounded-xl px-3 py-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words ${
+                  isUser
+                    ? "bg-primary text-primary-foreground rounded-tr-sm"
+                    : "bg-card border border-border text-foreground rounded-tl-sm"
+                }`}>
+                  {msg.content || (
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <Loader2 className="w-3 h-3 animate-spin" />
                       กำลังวิเคราะห์...
@@ -216,28 +254,11 @@ export function AiChatPanel({
           })
         )}
 
-        {/* Streaming indicator */}
-        {isLoading && messages[messages.length - 1]?.role === "user" && (
-          <div className="flex gap-2">
-            <div className="w-6 h-6 rounded-full bg-secondary shrink-0 flex items-center justify-center mt-0.5">
-              <Bot className="w-3 h-3 text-muted-foreground" />
-            </div>
-            <div className="bg-card border border-border rounded-xl rounded-tl-sm px-3 py-2">
-              <div className="flex gap-1 items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
-              </div>
-            </div>
-          </div>
-        )}
-
         {error && (
-          <div className="text-[10px] font-mono text-bearish text-center px-2 py-1 bg-bearish/10 rounded-md border border-bearish/20">
-            เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง
+          <div className="text-[10px] font-mono text-red-400 text-center px-2 py-1 bg-red-500/10 rounded-md border border-red-500/20">
+            {error}
           </div>
         )}
-
         <div ref={messagesEndRef} />
       </div>
 
@@ -256,7 +277,7 @@ export function AiChatPanel({
             style={{ maxHeight: 80, overflowY: "auto" }}
           />
           <button
-            onClick={handleSend}
+            onClick={() => sendMessage(input)}
             disabled={!input.trim() || isLoading}
             className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-primary/80 transition-colors"
           >
