@@ -18,6 +18,7 @@ import { AccountPanel } from "@/components/account-panel";
 import { PositionsPanel } from "@/components/positions-panel";
 import { TradePanel } from "@/components/trade-panel";
 import { useTradingData } from "@/hooks/use-trading-data";
+import { calculateMOLinear } from "@/lib/analysis";
 import { useAlerts } from "@/hooks/use-alerts";
 import type { Instrument } from "@/lib/types";
 import {
@@ -65,6 +66,9 @@ export default function TradingDashboard() {
     alerts,
     setAlerts,
   } = useTradingData(instrument, slopePeriod);
+
+  // Compute MO Linear for AI context (period=5, dcPeriod=5)
+  const moLinear = candles.length >= 20 ? calculateMOLinear(candles, 5, 5) : null;
 
   const { triggerAlert, requestNotificationPermission } = useAlerts(
     soundEnabled,
@@ -151,6 +155,7 @@ export default function TradingDashboard() {
             adviceLevel={adviceLevel}
             mtf={mtf}
             candles={candles}
+            moLinear={moLinear}
           />
         </div>
       )}

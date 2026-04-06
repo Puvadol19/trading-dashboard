@@ -21,6 +21,13 @@ export async function POST(req: NextRequest) {
       adviceLevel: string;
       mtf: { s5: number | null; m1: number | null; m5: number | null } | null;
       recentCandles: { open: number; high: number; low: number; close: number; time: number }[];
+      moLinear: {
+        midA: number | null;
+        midB: number | null;
+        k: number | null;
+        midA_vs_k: string;
+        normalizedK1: number | null;
+      } | null;
     };
   } = await req.json();
 
@@ -44,6 +51,7 @@ export async function POST(req: NextRequest) {
 - Tick Velocity: ${context.tickVelocity !== null ? `${context.tickVelocity.toFixed(2)} pips/sec` : "N/A"}
 - System Advice: ${context.advice} (${context.adviceLevel})
 - MTF Slope → S5: ${context.mtf?.s5?.toFixed(6) ?? "N/A"} | M1: ${context.mtf?.m1?.toFixed(6) ?? "N/A"} | M5: ${context.mtf?.m5?.toFixed(6) ?? "N/A"}
+- MO Linear → mid(a): ${context.moLinear?.midA?.toFixed(5) ?? "N/A"} | mid(b): ${context.moLinear?.midB?.toFixed(5) ?? "N/A"} | k: ${context.moLinear?.k?.toFixed(5) ?? "N/A"} | Signal: ${context.moLinear?.midA_vs_k ?? "N/A"} | k1(normalized): ${context.moLinear?.normalizedK1?.toFixed(5) ?? "N/A"}
 - Last 10 Candles: ${candleSummary}
 
 Answer questions using this live data. Be concise. Respond in the same language the user uses (Thai or English). Always note this is analysis, not financial advice.`;

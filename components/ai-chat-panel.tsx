@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Send, Bot, User, Loader2, Sparkles, RotateCcw } from "lucide-react";
-import type { CandleData, SlopeAnalysis, RSIData, MACDData, TickVelocity, MTFAnalysis } from "@/lib/types";
+import { Send, Bot, User, Loader2, Sparkles, RotateCcw, Bell } from "lucide-react";
+import type { CandleData, SlopeAnalysis, RSIData, MACDData, TickVelocity, MTFAnalysis, MOLinearResult } from "@/lib/types";
 
 interface Message {
   id: string;
@@ -21,6 +21,17 @@ interface AiChatPanelProps {
   adviceLevel: string;
   mtf: MTFAnalysis | null;
   candles: CandleData[];
+  moLinear: MOLinearResult | null;
+}
+
+type AlertType = "bullish_cross" | "bearish_cross" | "k_breakout" | "momentum_surge";
+
+interface AiAlert {
+  id: string;
+  type: AlertType;
+  message: string;
+  timestamp: number;
+  aiAnalysis: string;
 }
 
 const QUICK_PROMPTS = [
@@ -28,8 +39,8 @@ const QUICK_PROMPTS = [
   "ควร Buy หรือ Sell?",
   "RSI บอกอะไร?",
   "MACD สัญญาณล่าสุด?",
+  "MO Linear บอกอะไร? mid(a) vs k เป็นยังไง?",
   "จุด Support/Resistance อยู่ที่ไหน?",
-  "What is the current trend?",
 ];
 
 export function AiChatPanel({
@@ -43,14 +54,130 @@ export function AiChatPanel({
   adviceLevel,
   mtf,
   candles,
+  moLinear,
 }: AiChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiAlerts, setAiAlerts] = useState<AiAlert[]>([]);
+  const [showAlerts, setShowAlerts] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const prevSignalRef = useRef<{ midAAboveK: boolean | null }>({ midAAboveK: null });
+
+  // Extract latest MO Linear values
+  const latestMO = moLinear
+    ? {
+        midA: moLinear.midA[moLinear.midA.length - 1] ?? null,
+        midB: moLinear.midB[moLinear.midB.length - 1] ?? null,
+        k: moLinear.k[moLinear.k.length - 1] ?? null,
+        midA1: moLinear.midA1[moLinear.midA1.length - 1] ?? null,
+        midB1: moLinear.midB1[moLinear.midB1.length - 1] ?? null,
+        k1: moLinear.k1[moLinear.k1.length - 1] ?? null,
+        // Previous bar for crossover detection
+        prevMidA: moLinear.midA[moLinear.midA.length - 2] ?? null,
+        prevK: moLinear.k[moLinear.k.length - 2] ?? null,
+      }
+    : null;
+
+  // Auto-alert: detect MO Linear crossovers
+  useEffect(() => {
+    if (!latestMO || latestMO.midA === null || latestMO.k === null) return;
+    if (latestMO.prevMidA === null || latestMO.prevK === null) return;
+
+    const midAAboveK = latestMO.midA > latestMO.k;
+    const prevMidAAboveK = latestMO.prevMidA > latestMO.prevK;
+
+    if (prevSignalRef.current.midAAboveK === null) {
+      prevSignalRef.current.midAAboveK = midAAboveK;
+      return;
+    }
+
+    if (midAAboveK !== prevSignalRef.current.midAAboveK) {
+      const isBullish = midAAboveK;
+      const type: AlertType = isBullish ? "bullish_cross" : "bearish_cross";
+      const message = isBullish
+        ? `MO Linear: mid(a) ตัด k ขึ้น — สัญญาณ BULLISH`
+        : `MO Linear: mid(a) ตัด k ลง — สัญญาณ BEARISH`;
+
+      const newAlert: AiAlert = {
+        id: Date.now().toString(),
+        type,
+        message,
+        timestamp: Date.now(),
+        aiAnalysis: "",
+      };
+
+      setAiAlerts((prev) => [newAlert, ...prev].slice(0, 10));
+      setShowAlerts(true);
+
+      // Ask AI to analyze the crossover automatically
+      const autoPrompt = isBullish
+        ? `MO Linear เพิ่งเกิด Bullish Cross (mid(a) ตัด k ขึ้น) บน ${instrument.replace("_", "/")} midA=${latestMO.midA?.toFixed(5)} k=${latestMO.k?.toFixed(5)} วิเคราะห์สัญญาณนี้ให้หน่อย`
+        : `MO Linear เพิ่งเกิด Bearish Cross (mid(a) ตัด k ลง) บน ${instrument.replace("_", "/")} midA=${latestMO.midA?.toFixed(5)} k=${latestMO.k?.toFixed(5)} วิเคราะห์สัญญาณนี้ให้หน่อย`;
+
+      sendAutoAlert(autoPrompt, newAlert.id);
+      prevSignalRef.current.midAAboveK = midAAboveK;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestMO?.midA, latestMO?.k]);
+
+  const sendAutoAlert = useCallback(async (prompt: string, alertId: string) => {
+    const assistantId = `alert-${alertId}`;
+    const alertMsg: Message = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+    };
+    setMessages((prev) => [
+      ...prev,
+      { id: `trigger-${alertId}`, role: "user", content: `[AUTO ALERT] ${prompt}` },
+      alertMsg,
+    ]);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }],
+          context: buildContext(),
+        }),
+      });
+
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const data = trimmed.slice(5).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content + delta } : m
+                )
+              );
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch { /* silent fail for auto alerts */ }
+  }, [buildContext]);
 
   const buildContext = useCallback(() => ({
     instrument,
@@ -73,7 +200,18 @@ export function AiChatPanel({
     recentCandles: candles.slice(-10).map((c) => ({
       open: c.open, high: c.high, low: c.low, close: c.close, time: c.time,
     })),
-  }), [instrument, currentTick, slope, rsi, macd, tickVelocity, advice, adviceLevel, mtf, candles]);
+    moLinear: latestMO
+      ? {
+          midA: latestMO.midA,
+          midB: latestMO.midB,
+          k: latestMO.k,
+          midA_vs_k: latestMO.midA !== null && latestMO.k !== null
+            ? latestMO.midA > latestMO.k ? "mid(a) ABOVE k — bullish bias" : "mid(a) BELOW k — bearish bias"
+            : "N/A",
+          normalizedK1: latestMO.k1,
+        }
+      : null,
+  }), [instrument, currentTick, slope, rsi, macd, tickVelocity, advice, adviceLevel, mtf, candles, latestMO]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -183,29 +321,75 @@ export function AiChatPanel({
           <div>
             <p className="text-xs font-mono font-semibold text-foreground">AI Trading Analyst</p>
             <p className="text-[9px] text-muted-foreground font-mono">
-              Live context: {instrument.replace("_", "/")} •{" "}
-              <span className={
-                adviceLevel === "safe"
-                  ? "text-green-400"
-                  : adviceLevel === "danger"
-                  ? "text-red-400"
-                  : "text-yellow-400"
-              }>
-                {adviceLevel.toUpperCase()}
-              </span>
+              Live: {instrument.replace("_", "/")} •{" "}
+              {latestMO?.midA !== null && latestMO?.k !== null && latestMO?.midA !== undefined && latestMO?.k !== undefined ? (
+                <span className={latestMO.midA > latestMO.k ? "text-green-400" : "text-red-400"}>
+                  MO {latestMO.midA > latestMO.k ? "BULL" : "BEAR"}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">MO —</span>
+              )}
             </p>
           </div>
         </div>
-        {messages.length > 0 && (
+        <div className="flex items-center gap-1">
+          {/* Alert bell */}
           <button
-            onClick={clearChat}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1"
-            title="Clear chat"
+            onClick={() => setShowAlerts(!showAlerts)}
+            className="relative text-muted-foreground hover:text-foreground transition-colors p-1"
+            title="AI Alerts"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <Bell className="w-3.5 h-3.5" />
+            {aiAlerts.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-yellow-400 text-[7px] flex items-center justify-center font-bold text-black">
+                {aiAlerts.length > 9 ? "9" : aiAlerts.length}
+              </span>
+            )}
           </button>
-        )}
+          {messages.length > 0 && (
+            <button
+              onClick={clearChat}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1"
+              title="Clear chat"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* AI Alert list — slides down when open */}
+      {showAlerts && aiAlerts.length > 0 && (
+        <div className="shrink-0 mb-3 flex flex-col gap-1.5 max-h-40 overflow-y-auto">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">AI Auto-Alerts</span>
+            <button
+              onClick={() => setAiAlerts([])}
+              className="text-[9px] font-mono text-muted-foreground hover:text-foreground"
+            >
+              clear
+            </button>
+          </div>
+          {aiAlerts.map((alert) => (
+            <div
+              key={alert.id}
+              className={`flex items-start gap-2 px-2 py-1.5 rounded-md border text-[10px] font-mono ${
+                alert.type === "bullish_cross"
+                  ? "bg-green-500/10 border-green-500/30 text-green-400"
+                  : "bg-red-500/10 border-red-500/30 text-red-400"
+              }`}
+            >
+              <Bell className="w-3 h-3 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">{alert.message}</p>
+                <p className="text-[9px] text-muted-foreground">
+                  {new Date(alert.timestamp).toLocaleTimeString("th-TH")}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1">
