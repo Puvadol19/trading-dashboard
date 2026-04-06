@@ -124,17 +124,46 @@ export function AiChatPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestMO?.midA, latestMO?.k]);
 
+  const buildContext = useCallback(() => ({
+    instrument,
+    currentPrice: currentTick?.bid ?? candles[candles.length - 1]?.close ?? 0,
+    bid: currentTick?.bid ?? 0,
+    ask: currentTick?.ask ?? 0,
+    spread: currentTick ? (currentTick.ask - currentTick.bid) * 10000 : 0,
+    slope: slope?.slope ?? null,
+    slopeDirection: slope
+      ? slope.slope > 0 ? "BULLISH" : slope.slope < 0 ? "BEARISH" : "SIDEWAYS"
+      : "N/A",
+    rsi: rsi?.rsi ?? null,
+    macd: macd ? { macd: macd.macd, signal: macd.signal, histogram: macd.histogram } : null,
+    tickVelocity: tickVelocity?.velocity ?? null,
+    advice,
+    adviceLevel,
+    mtf: mtf
+      ? { s5: mtf.s5?.slope ?? null, m1: mtf.m1?.slope ?? null, m5: mtf.m5?.slope ?? null }
+      : null,
+    recentCandles: candles.slice(-10).map((c) => ({
+      open: c.open, high: c.high, low: c.low, close: c.close, time: c.time,
+    })),
+        moLinear: latestMO
+      ? {
+          midA: latestMO.midA,
+          midB: latestMO.midB,
+          k: latestMO.k,
+          midA_vs_k: latestMO.midA !== null && latestMO.k !== null
+            ? latestMO.midA > latestMO.k ? "mid(a) ABOVE k — bullish bias" : "mid(a) BELOW k — bearish bias"
+            : "N/A",
+          normalizedK1: latestMO.k1,
+        }
+      : null,
+  }), [instrument, currentTick, slope, rsi, macd, tickVelocity, advice, adviceLevel, mtf, candles, latestMO]);
+
   const sendAutoAlert = useCallback(async (prompt: string, alertId: string) => {
     const assistantId = `alert-${alertId}`;
-    const alertMsg: Message = {
-      id: assistantId,
-      role: "assistant",
-      content: "",
-    };
     setMessages((prev) => [
       ...prev,
-      { id: `trigger-${alertId}`, role: "user", content: `[AUTO ALERT] ${prompt}` },
-      alertMsg,
+      { id: `trigger-${alertId}`, role: "user" as const, content: `[AUTO ALERT] ${prompt}` },
+      { id: assistantId, role: "assistant" as const, content: "" },
     ]);
 
     try {
@@ -178,40 +207,6 @@ export function AiChatPanel({
       }
     } catch { /* silent fail for auto alerts */ }
   }, [buildContext]);
-
-  const buildContext = useCallback(() => ({
-    instrument,
-    currentPrice: currentTick?.bid ?? candles[candles.length - 1]?.close ?? 0,
-    bid: currentTick?.bid ?? 0,
-    ask: currentTick?.ask ?? 0,
-    spread: currentTick ? (currentTick.ask - currentTick.bid) * 10000 : 0,
-    slope: slope?.slope ?? null,
-    slopeDirection: slope
-      ? slope.slope > 0 ? "BULLISH" : slope.slope < 0 ? "BEARISH" : "SIDEWAYS"
-      : "N/A",
-    rsi: rsi?.rsi ?? null,
-    macd: macd ? { macd: macd.macd, signal: macd.signal, histogram: macd.histogram } : null,
-    tickVelocity: tickVelocity?.velocity ?? null,
-    advice,
-    adviceLevel,
-    mtf: mtf
-      ? { s5: mtf.s5?.slope ?? null, m1: mtf.m1?.slope ?? null, m5: mtf.m5?.slope ?? null }
-      : null,
-    recentCandles: candles.slice(-10).map((c) => ({
-      open: c.open, high: c.high, low: c.low, close: c.close, time: c.time,
-    })),
-    moLinear: latestMO
-      ? {
-          midA: latestMO.midA,
-          midB: latestMO.midB,
-          k: latestMO.k,
-          midA_vs_k: latestMO.midA !== null && latestMO.k !== null
-            ? latestMO.midA > latestMO.k ? "mid(a) ABOVE k — bullish bias" : "mid(a) BELOW k — bearish bias"
-            : "N/A",
-          normalizedK1: latestMO.k1,
-        }
-      : null,
-  }), [instrument, currentTick, slope, rsi, macd, tickVelocity, advice, adviceLevel, mtf, candles, latestMO]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -358,36 +353,56 @@ export function AiChatPanel({
         </div>
       </div>
 
-      {/* AI Alert list — slides down when open */}
-      {showAlerts && aiAlerts.length > 0 && (
-        <div className="shrink-0 mb-3 flex flex-col gap-1.5 max-h-40 overflow-y-auto">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">AI Auto-Alerts</span>
-            <button
-              onClick={() => setAiAlerts([])}
-              className="text-[9px] font-mono text-muted-foreground hover:text-foreground"
-            >
-              clear
-            </button>
-          </div>
-          {aiAlerts.map((alert) => (
-            <div
-              key={alert.id}
-              className={`flex items-start gap-2 px-2 py-1.5 rounded-md border text-[10px] font-mono ${
-                alert.type === "bullish_cross"
-                  ? "bg-green-500/10 border-green-500/30 text-green-400"
-                  : "bg-red-500/10 border-red-500/30 text-red-400"
-              }`}
-            >
-              <Bell className="w-3 h-3 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold">{alert.message}</p>
-                <p className="text-[9px] text-muted-foreground">
-                  {new Date(alert.timestamp).toLocaleTimeString("th-TH")}
-                </p>
-              </div>
+      {/* AI Alert panel — always visible when Bell is toggled */}
+      {showAlerts && (
+        <div className="shrink-0 mb-3 rounded-lg border border-border bg-card/50 p-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+              <Bell className="w-3 h-3" /> AI Auto-Alerts
+            </span>
+            <div className="flex items-center gap-2">
+              {aiAlerts.length > 0 && (
+                <button
+                  onClick={() => setAiAlerts([])}
+                  className="text-[9px] font-mono text-muted-foreground hover:text-foreground"
+                >
+                  clear all
+                </button>
+              )}
+              <button
+                onClick={() => setShowAlerts(false)}
+                className="text-[9px] font-mono text-muted-foreground hover:text-foreground"
+              >
+                close
+              </button>
             </div>
-          ))}
+          </div>
+          {aiAlerts.length === 0 ? (
+            <p className="text-[10px] font-mono text-muted-foreground text-center py-2">
+              ยังไม่มี alert — ระบบจะแจ้งเตือนอัตโนมัติเมื่อ mid(a) ตัด k
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+              {aiAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className={`flex items-start gap-2 px-2 py-1.5 rounded-md border text-[10px] font-mono ${
+                    alert.type === "bullish_cross"
+                      ? "bg-green-500/10 border-green-500/30 text-green-400"
+                      : "bg-red-500/10 border-red-500/30 text-red-400"
+                  }`}
+                >
+                  <Bell className="w-3 h-3 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">{alert.message}</p>
+                    <p className="text-[9px] text-muted-foreground">
+                      {new Date(alert.timestamp).toLocaleTimeString("th-TH")}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
