@@ -57,39 +57,69 @@ Answer questions using this live data. Be concise. Respond in the same language 
     );
   }
 
-  let response: Response;
-  try {
-    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://trading-dashboard.vercel.app",
-        "X-Title": "Trading Dashboard AI",
-      },
-      body: JSON.stringify({
-        model: "deepseek/deepseek-r1:free",
-        stream: true,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
-      }),
-    });
-  } catch (fetchErr) {
-    const msg = fetchErr instanceof Error ? fetchErr.message : "Network error";
-    return new Response(
-      `data: ${JSON.stringify({ choices: [{ delta: { content: `เชื่อมต่อ OpenRouter ไม่ได้: ${msg}` } }] })}\n\ndata: [DONE]\n\n`,
-      { status: 200, headers: { "Content-Type": "text/event-stream" } }
-    );
+  // Try models in order until one works
+  const FREE_MODELS = [
+    "meta-llama/llama-4-maverick:free",
+    "meta-llama/llama-4-scout:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+    "qwen/qwen3-235b-a22b:free",
+    "mistralai/mistral-7b-instruct:free",
+  ];
+
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+    "HTTP-Referer": "https://trading-dashboard.vercel.app",
+    "X-Title": "Trading Dashboard AI",
+  };
+
+  let response: Response | null = null;
+  let lastError = "";
+
+  for (const model of FREE_MODELS) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          stream: true,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages,
+          ],
+        }),
+      });
+
+      if (res.ok) {
+        response = res;
+        break;
+      }
+
+      const errText = await res.text();
+      let detail = errText;
+      try { detail = JSON.parse(errText)?.error?.message ?? errText; } catch { /* ok */ }
+
+      // 404 = model not available, try next; other errors = stop
+      if (res.status !== 404) {
+        return new Response(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: `OpenRouter error ${res.status}: ${detail}` } }] })}\n\ndata: [DONE]\n\n`,
+          { status: 200, headers: { "Content-Type": "text/event-stream" } }
+        );
+      }
+      lastError = `${model}: ${detail}`;
+    } catch (fetchErr) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : "Network error";
+      return new Response(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: `เชื่อมต่อ OpenRouter ไม่ได้: ${msg}` } }] })}\n\ndata: [DONE]\n\n`,
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      );
+    }
   }
 
-  if (!response.ok) {
-    const errText = await response.text();
-    let detail = errText;
-    try { detail = JSON.parse(errText)?.error?.message ?? errText; } catch { /* ok */ }
+  if (!response) {
     return new Response(
-      `data: ${JSON.stringify({ choices: [{ delta: { content: `OpenRouter error ${response.status}: ${detail}` } }] })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: `ไม่พบ model ที่ใช้งานได้: ${lastError}` } }] })}\n\ndata: [DONE]\n\n`,
       { status: 200, headers: { "Content-Type": "text/event-stream" } }
     );
   }
