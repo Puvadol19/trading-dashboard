@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Send, Bot, User, Loader2, Sparkles, RotateCcw, Bell } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, RotateCcw, Bell, BellOff, BellRing } from "lucide-react";
 import type { CandleData, SlopeAnalysis, RSIData, MACDData, TickVelocity, MTFAnalysis, MOLinearResult } from "@/lib/types";
+import { useNotifications } from "@/hooks/use-notifications";
 
 interface Message {
   id: string;
@@ -62,6 +63,7 @@ export function AiChatPanel({
   const [error, setError] = useState<string | null>(null);
   const [aiAlerts, setAiAlerts] = useState<AiAlert[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
+  const { permission, isSubscribed, isLoading: notifLoading, requestPermission, unsubscribe, sendPush } = useNotifications();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -113,6 +115,13 @@ export function AiChatPanel({
       setAiAlerts((prev) => [newAlert, ...prev].slice(0, 10));
       setShowAlerts(true);
 
+      // Send push notification to mobile / Apple Watch
+      sendPush(
+        isBullish ? "BULLISH Signal — " + instrument.replace("_", "/") : "BEARISH Signal — " + instrument.replace("_", "/"),
+        message + ` | mid(a)=${latestMO.midA?.toFixed(5)} k=${latestMO.k?.toFixed(5)}`,
+        isBullish ? "bullish-cross" : "bearish-cross"
+      );
+
       // Ask AI to analyze the crossover automatically
       const autoPrompt = isBullish
         ? `MO Linear เพิ่งเกิด Bullish Cross (mid(a) ตัด k ขึ้น) บน ${instrument.replace("_", "/")} midA=${latestMO.midA?.toFixed(5)} k=${latestMO.k?.toFixed(5)} วิเคราะห์สัญญาณนี้ให้หน่อย`
@@ -122,7 +131,7 @@ export function AiChatPanel({
       prevSignalRef.current.midAAboveK = midAAboveK;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestMO?.midA, latestMO?.k]);
+  }, [latestMO?.midA, latestMO?.k, sendPush]);
 
   const buildContext = useCallback(() => ({
     instrument,
@@ -328,16 +337,47 @@ export function AiChatPanel({
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {/* Alert bell */}
+          {/* Push notification toggle */}
+          {permission !== "unsupported" && (
+            <button
+              onClick={isSubscribed ? unsubscribe : requestPermission}
+              disabled={notifLoading || permission === "denied"}
+              className={`p-1 transition-colors disabled:opacity-40 ${
+                isSubscribed
+                  ? "text-green-400 hover:text-green-300"
+                  : permission === "denied"
+                  ? "text-red-400 cursor-not-allowed"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              title={
+                isSubscribed
+                  ? "Push notifications เปิดอยู่ — คลิกเพื่อปิด"
+                  : permission === "denied"
+                  ? "Notifications ถูกบล็อก — เปิดใน browser settings"
+                  : "เปิด Push Notifications (รองรับ Apple Watch)"
+              }
+            >
+              {notifLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : isSubscribed ? (
+                <BellRing className="w-3.5 h-3.5" />
+              ) : permission === "denied" ? (
+                <BellOff className="w-3.5 h-3.5" />
+              ) : (
+                <Bell className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
+          {/* Alert list toggle */}
           <button
             onClick={() => setShowAlerts(!showAlerts)}
             className="relative text-muted-foreground hover:text-foreground transition-colors p-1"
-            title="AI Alerts"
+            title="AI Alerts history"
           >
             <Bell className="w-3.5 h-3.5" />
             {aiAlerts.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-yellow-400 text-[7px] flex items-center justify-center font-bold text-black">
-                {aiAlerts.length > 9 ? "9" : aiAlerts.length}
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-yellow-400 text-[7px] flex items-center justify-center font-bold text-black">
+                {aiAlerts.length > 9 ? "9+" : aiAlerts.length}
               </span>
             )}
           </button>
