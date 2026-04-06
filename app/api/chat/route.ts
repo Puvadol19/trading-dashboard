@@ -59,6 +59,7 @@ Answer questions using this live data. Be concise. Respond in the same language 
 
   // Try models in order until one works
   const FREE_MODELS = [
+    "stepfun/step-3-5-flash:free",
     "meta-llama/llama-4-maverick:free",
     "meta-llama/llama-4-scout:free",
     "deepseek/deepseek-chat-v3-0324:free",
