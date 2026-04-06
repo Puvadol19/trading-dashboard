@@ -57,13 +57,14 @@ Answer questions using this live data. Be concise. Respond in the same language 
     );
   }
 
-  // Try models in order until one works
+  // Try models in order until one works (verified from OpenRouter API April 2026)
   const FREE_MODELS = [
-    "stepfun/step-3-5-flash:free",
+    "qwen/qwen3-coder:free",
+    "qwen/qwen3-235b-a22b:free",
+    "deepseek/deepseek-chat-v3-0324:free",
     "meta-llama/llama-4-maverick:free",
     "meta-llama/llama-4-scout:free",
-    "deepseek/deepseek-chat-v3-0324:free",
-    "qwen/qwen3-235b-a22b:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
     "mistralai/mistral-7b-instruct:free",
   ];
 
