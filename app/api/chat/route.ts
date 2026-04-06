@@ -102,14 +102,15 @@ Answer questions using this live data. Be concise. Respond in the same language 
       let detail = errText;
       try { detail = JSON.parse(errText)?.error?.message ?? errText; } catch { /* ok */ }
 
-      // 404 = model not available, try next; other errors = stop
-      if (res.status !== 404) {
+      // 404 = model not found, 429 = rate limited — try next model
+      // Any other error (401, 402, 500...) = stop immediately
+      if (res.status !== 404 && res.status !== 429) {
         return new Response(
           `data: ${JSON.stringify({ choices: [{ delta: { content: `OpenRouter error ${res.status}: ${detail}` } }] })}\n\ndata: [DONE]\n\n`,
           { status: 200, headers: { "Content-Type": "text/event-stream" } }
         );
       }
-      lastError = `${model}: ${detail}`;
+      lastError = `${model} (${res.status}): ${detail}`;
     } catch (fetchErr) {
       const msg = fetchErr instanceof Error ? fetchErr.message : "Network error";
       return new Response(
