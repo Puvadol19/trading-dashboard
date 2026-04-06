@@ -57,15 +57,16 @@ Answer questions using this live data. Be concise. Respond in the same language 
     );
   }
 
-  // Try models in order until one works (verified from OpenRouter API April 2026)
+  // Try models in order until one works (verified from OpenRouter API 2026-04-06)
   const FREE_MODELS = [
-    "qwen/qwen3-coder:free",
+    "bytedance-seed/seed-2.0-lite",
     "qwen/qwen3-235b-a22b:free",
+    "qwen/qwen3-30b-a3b:free",
     "deepseek/deepseek-chat-v3-0324:free",
     "meta-llama/llama-4-maverick:free",
     "meta-llama/llama-4-scout:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "mistralai/mistral-7b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "google/gemma-3-27b-it:free",
   ];
 
   const headers = {
