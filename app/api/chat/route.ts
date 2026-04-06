@@ -1,6 +1,6 @@
-export const maxDuration = 30;
+import { NextRequest } from "next/server";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const {
     messages,
     context,
@@ -67,7 +67,6 @@ Answer questions using this live data. Be concise. Respond in the same language 
         "HTTP-Referer": "https://trading-dashboard.vercel.app",
         "X-Title": "Trading Dashboard AI",
       },
-      signal: req.signal,
       body: JSON.stringify({
         model: "google/gemini-2.0-flash-exp:free",
         stream: true,
