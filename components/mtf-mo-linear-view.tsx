@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MoLinearChart } from "@/components/mo-linear-chart";
 import type { CandleData } from "@/lib/types";
 
@@ -25,6 +25,15 @@ export function MtfMoLinearView({
 }: MtfMoLinearViewProps) {
   const [period, setPeriod] = useState(5);
   const [dcPeriod, setDcPeriod] = useState(5);
+  const [activeTf, setActiveTf] = useState<"s5" | "m1" | "m5">("s5");
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const candleMap: Record<"s5" | "m1" | "m5", CandleData[]> = {
     s5: s5Candles,
@@ -141,7 +150,47 @@ export function MtfMoLinearView({
         </div>
       </div>
 
-      {/* 3-column chart grid */}
+      {/* Mobile: TF tab switcher */}
+      {isMobile && (
+        <div
+          style={{
+            display: "flex",
+            borderBottom: "1px solid #1e293b",
+            background: "#0f172a",
+            flexShrink: 0,
+          }}
+        >
+          {TIMEFRAMES.map((tf) => {
+            const isActive = activeTf === tf.key;
+            const hasData = candleMap[tf.key].length > 0;
+            return (
+              <button
+                key={tf.key}
+                onClick={() => setActiveTf(tf.key)}
+                style={{
+                  flex: 1,
+                  padding: "8px 4px",
+                  background: "none",
+                  border: "none",
+                  borderBottom: isActive ? "2px solid #3b82f6" : "2px solid transparent",
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 2,
+                }}
+              >
+                <span style={{ fontSize: 13, fontFamily: "monospace", fontWeight: 700, color: isActive ? "#3b82f6" : "#94a3b8" }}>{tf.label}</span>
+                <span style={{ fontSize: 9, fontFamily: "monospace", color: hasData ? "#22c55e" : "#ef4444" }}>
+                  {hasData ? `n=${candleMap[tf.key].length}` : "—"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Chart grid — desktop: 3 columns | mobile: single active TF */}
       <div
         style={{
           flex: 1,
@@ -154,6 +203,8 @@ export function MtfMoLinearView({
         {TIMEFRAMES.map((tf, idx) => {
           const tfCandles = candleMap[tf.key];
           const hasData = tfCandles.length > 0;
+          // On mobile, only render the active tab
+          if (isMobile && tf.key !== activeTf) return null;
 
           return (
             <div
@@ -163,52 +214,31 @@ export function MtfMoLinearView({
                 display: "flex",
                 flexDirection: "column",
                 minWidth: 0,
-                borderRight: idx < TIMEFRAMES.length - 1 ? "1px solid #1e293b" : "none",
+                borderRight: !isMobile && idx < TIMEFRAMES.length - 1 ? "1px solid #1e293b" : "none",
               }}
             >
-              {/* Column header */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "4px 10px",
-                  borderBottom: "1px solid #1e293b",
-                  background: "#0f172a",
-                  flexShrink: 0,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontFamily: "monospace",
-                      fontWeight: 700,
-                      color: "#e2e8f0",
-                    }}
-                  >
-                    {tf.label}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontFamily: "monospace",
-                      color: "#64748b",
-                    }}
-                  >
-                    {tf.description}
-                  </span>
-                </div>
-                <span
+              {/* Column header — only on desktop */}
+              {!isMobile && (
+                <div
                   style={{
-                    fontSize: 9,
-                    fontFamily: "monospace",
-                    color: hasData ? "#22c55e" : "#ef4444",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "4px 10px",
+                    borderBottom: "1px solid #1e293b",
+                    background: "#0f172a",
+                    flexShrink: 0,
                   }}
                 >
-                  {hasData ? `n=${tfCandles.length}` : "NO DATA"}
-                </span>
-              </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: "#e2e8f0" }}>{tf.label}</span>
+                    <span style={{ fontSize: 9, fontFamily: "monospace", color: "#64748b" }}>{tf.description}</span>
+                  </div>
+                  <span style={{ fontSize: 9, fontFamily: "monospace", color: hasData ? "#22c55e" : "#ef4444" }}>
+                    {hasData ? `n=${tfCandles.length}` : "NO DATA"}
+                  </span>
+                </div>
+              )}
 
               {/* Chart area */}
               <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
