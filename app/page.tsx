@@ -13,6 +13,7 @@ import { MACDPanel } from "@/components/macd-panel";
 import { BollingerPanel } from "@/components/bollinger-panel";
 import { MTFPanel } from "@/components/mtf-panel";
 import { AlertsPanel } from "@/components/alerts-panel";
+import { AiChatPanel } from "@/components/ai-chat-panel";
 import { AccountPanel } from "@/components/account-panel";
 import { PositionsPanel } from "@/components/positions-panel";
 import { TradePanel } from "@/components/trade-panel";
@@ -28,9 +29,10 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Sparkles,
 } from "lucide-react";
 
-type SidebarTab = "analysis" | "indicators" | "trade" | "alerts";
+type SidebarTab = "analysis" | "indicators" | "trade" | "alerts" | "ai";
 
 export default function TradingDashboard() {
   const [instrument, setInstrument] = useState<Instrument>("XAU_USD");
@@ -91,6 +93,7 @@ export default function TradingDashboard() {
     { id: "indicators", label: "Indicators", icon: Layers },
     { id: "trade", label: "Trade", icon: Wallet },
     { id: "alerts", label: "Alerts", icon: ShieldCheck },
+    { id: "ai", label: "AI", icon: Sparkles },
   ];
 
   // Mobile panel heights
@@ -134,6 +137,22 @@ export default function TradingDashboard() {
           <TradePanel instrument={instrument} currentBid={currentTick?.bid ?? 0} currentAsk={currentTick?.ask ?? 0} />
           <PositionsPanel />
         </>
+      )}
+      {activeTab === "ai" && (
+        <div className="flex flex-col h-full min-h-0" style={{ height: "calc(100vh - 220px)" }}>
+          <AiChatPanel
+            instrument={instrument}
+            currentTick={currentTick}
+            slope={slope}
+            rsi={rsi}
+            macd={macd}
+            tickVelocity={tickVelocity}
+            advice={advice}
+            adviceLevel={adviceLevel}
+            mtf={mtf}
+            candles={candles}
+          />
+        </div>
       )}
       {activeTab === "alerts" && (
         <>
