@@ -123,6 +123,41 @@ export interface TradeOrder {
   takeProfit?: number;
 }
 
+// MO_linear indicator result
+export interface MOLinearResult {
+  // Panel 1 lines
+  midA: number[];
+  midB: number[];
+  k: number[];
+  // Panel 1 fills
+  upperDcA: number[];
+  lowerDcA: number[];
+  upperDcB: number[];
+  lowerDcB: number[];
+  upperDcK: number[];
+  lowerDcK: number[];
+  h: number[];
+  g: number[];
+  // Panel 2 normalized candles
+  openK: number[];
+  highK: number[];
+  lowK: number[];
+  closeK: number[];
+  // Panel 2 lines
+  midA1: number[];
+  midB1: number[];
+  k1: number[];
+  // Panel 2 fills
+  upperDcA1: number[];
+  lowerDcA1: number[];
+  upperDcB1: number[];
+  lowerDcB1: number[];
+  upperDcK1: number[];
+  lowerDcK1: number[];
+  h1: number[];
+  g1: number[];
+}
+
 export interface DashboardState {
   candles: CandleData[];
   currentTick: TickData | null;

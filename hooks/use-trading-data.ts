@@ -33,6 +33,8 @@ const POLL_INTERVAL = 5000;
 
 export function useTradingData(instrument: Instrument, slopePeriod: number = 7) {
   const [candles, setCandles] = useState<CandleData[]>([]);
+  const [m1Candles, setM1Candles] = useState<CandleData[]>([]);
+  const [m5Candles, setM5Candles] = useState<CandleData[]>([]);
   const [currentTick, setCurrentTick] = useState<TickData | null>(null);
   const [slope, setSlope] = useState<SlopeAnalysis | null>(null);
   const [fastSlope, setFastSlope] = useState<SlopeAnalysis | null>(null);
@@ -194,6 +196,15 @@ export function useTradingData(instrument: Instrument, slopePeriod: number = 7) 
     }
   }, [candleResponse, tickVelocity, addAlert, slopePeriod]);
 
+  // Store M1/M5 candles for MTF MO view
+  useEffect(() => {
+    if (m1Response?.candles) setM1Candles(m1Response.candles);
+  }, [m1Response]);
+
+  useEffect(() => {
+    if (m5Response?.candles) setM5Candles(m5Response.candles);
+  }, [m5Response]);
+
   // MTF analysis
   useEffect(() => {
     const s5Slope = slope;
@@ -308,6 +319,8 @@ export function useTradingData(instrument: Instrument, slopePeriod: number = 7) 
 
   return {
     candles,
+    m1Candles,
+    m5Candles,
     currentTick,
     slope,
     fastSlope,

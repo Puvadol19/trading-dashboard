@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import {
   createChart,
   type IChartApi,
@@ -12,16 +12,26 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { CandleData, SlopeAnalysis, TrendLine } from "@/lib/types";
+import { MoLinearChart } from "@/components/mo-linear-chart";
+import { MtfMoLinearView } from "@/components/mtf-mo-linear-view";
 
 interface TradingChartProps {
   candles: CandleData[];
+  m1Candles: CandleData[];
+  m5Candles: CandleData[];
   slope: SlopeAnalysis | null;
   trendLines?: TrendLine[];
   instrument: string;
   slopePeriod: number;
 }
 
-export function TradingChart({ candles, slope, trendLines = [], instrument, slopePeriod }: TradingChartProps) {
+type ChartMode = "candles" | "mo_linear" | "mtf_mo";
+
+export function TradingChart({ candles, m1Candles, m5Candles, slope, trendLines = [], instrument, slopePeriod }: TradingChartProps) {
+  const [chartMode, setChartMode] = useState<ChartMode>("candles");
+  const [moPeriod, setMoPeriod] = useState(5);
+  const [moDcPeriod, setMoDcPeriod] = useState(5);
+
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -216,14 +226,54 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
     updateTrendLines();
   }, [updateCandles, updateRegressionLine, updateTrendLines]);
 
+  const modes: { id: ChartMode; label: string }[] = [
+    { id: "candles",   label: "CANDLES" },
+    { id: "mo_linear", label: "MO LINEAR" },
+    { id: "mtf_mo",    label: "MTF MO" },
+  ];
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-mono font-semibold text-foreground">
             {instrument.replace("_", "/")}
           </span>
           <span className="text-xs text-muted-foreground">S5</span>
+          {/* Mode toggle */}
+          <div className="flex items-center gap-0.5 ml-2 bg-secondary rounded p-0.5">
+            {modes.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setChartMode(m.id)}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded transition-colors ${
+                  chartMode === m.id
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          {/* MO period controls - visible when in mo_linear or mtf_mo mode */}
+          {(chartMode === "mo_linear" || chartMode === "mtf_mo") && (
+            <div className="flex items-center gap-2 ml-1">
+              <span className="text-[10px] text-muted-foreground font-mono">P</span>
+              <div className="flex items-center gap-0.5 bg-background border border-border rounded px-1 py-0.5">
+                <button onClick={() => setMoPeriod(Math.max(2, moPeriod - 1))} className="text-[10px] text-muted-foreground hover:text-foreground w-3">-</button>
+                <span className="text-[10px] font-mono w-4 text-center">{moPeriod}</span>
+                <button onClick={() => setMoPeriod(Math.min(30, moPeriod + 1))} className="text-[10px] text-muted-foreground hover:text-foreground w-3">+</button>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-mono">DC</span>
+              <div className="flex items-center gap-0.5 bg-background border border-border rounded px-1 py-0.5">
+                <button onClick={() => setMoDcPeriod(Math.max(2, moDcPeriod - 1))} className="text-[10px] text-muted-foreground hover:text-foreground w-3">-</button>
+                <span className="text-[10px] font-mono w-4 text-center">{moDcPeriod}</span>
+                <button onClick={() => setMoDcPeriod(Math.min(30, moDcPeriod + 1))} className="text-[10px] text-muted-foreground hover:text-foreground w-3">+</button>
+              </div>
+            </div>
+          )}
         </div>
         {candles.length > 0 && (
           <div className="flex items-center gap-3 text-xs font-mono">
@@ -254,7 +304,42 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
           </div>
         )}
       </div>
-      <div ref={chartContainerRef} className="flex-1 min-h-0" />
+
+      {/* Chart body */}
+      <div className="flex-1 min-h-0 relative">
+        {/* Candles view — keep mounted so lightweight-charts ResizeObserver stays active */}
+        <div
+          ref={chartContainerRef}
+          className="absolute inset-0"
+          style={{
+            visibility: chartMode === "candles" ? "visible" : "hidden",
+            pointerEvents: chartMode === "candles" ? "auto" : "none",
+          }}
+        />
+        {/* MO Linear view */}
+        {chartMode === "mo_linear" && (
+          <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+            <MoLinearChart
+              candles={candles}
+              period={moPeriod}
+              dcPeriod={moDcPeriod}
+              instrument={instrument}
+            />
+          </div>
+        )}
+
+        {/* MTF MO view — S5 / M1 / M5 side-by-side */}
+        {chartMode === "mtf_mo" && (
+          <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+            <MtfMoLinearView
+              s5Candles={candles}
+              m1Candles={m1Candles}
+              m5Candles={m5Candles}
+              instrument={instrument}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
