@@ -13,18 +13,21 @@ import {
 } from "lightweight-charts";
 import type { CandleData, SlopeAnalysis, TrendLine } from "@/lib/types";
 import { MoLinearChart } from "@/components/mo-linear-chart";
+import { MtfMoLinearView } from "@/components/mtf-mo-linear-view";
 
 interface TradingChartProps {
   candles: CandleData[];
+  m1Candles: CandleData[];
+  m5Candles: CandleData[];
   slope: SlopeAnalysis | null;
   trendLines?: TrendLine[];
   instrument: string;
   slopePeriod: number;
 }
 
-type ChartMode = "candles" | "mo_linear";
+type ChartMode = "candles" | "mo_linear" | "mtf_mo";
 
-export function TradingChart({ candles, slope, trendLines = [], instrument, slopePeriod }: TradingChartProps) {
+export function TradingChart({ candles, m1Candles, m5Candles, slope, trendLines = [], instrument, slopePeriod }: TradingChartProps) {
   const [chartMode, setChartMode] = useState<ChartMode>("candles");
   const [moPeriod, setMoPeriod] = useState(5);
   const [moDcPeriod, setMoDcPeriod] = useState(5);
@@ -226,6 +229,7 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
   const modes: { id: ChartMode; label: string }[] = [
     { id: "candles",   label: "CANDLES" },
     { id: "mo_linear", label: "MO LINEAR" },
+    { id: "mtf_mo",    label: "MTF MO" },
   ];
 
   return (
@@ -253,8 +257,8 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
               </button>
             ))}
           </div>
-          {/* MO period controls - only visible when in mo_linear mode */}
-          {chartMode === "mo_linear" && (
+          {/* MO period controls - visible when in mo_linear or mtf_mo mode */}
+          {(chartMode === "mo_linear" || chartMode === "mtf_mo") && (
             <div className="flex items-center gap-2 ml-1">
               <span className="text-[10px] text-muted-foreground font-mono">P</span>
               <div className="flex items-center gap-0.5 bg-background border border-border rounded px-1 py-0.5">
@@ -319,6 +323,18 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
               candles={candles}
               period={moPeriod}
               dcPeriod={moDcPeriod}
+              instrument={instrument}
+            />
+          </div>
+        )}
+
+        {/* MTF MO view — S5 / M1 / M5 side-by-side */}
+        {chartMode === "mtf_mo" && (
+          <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+            <MtfMoLinearView
+              s5Candles={candles}
+              m1Candles={m1Candles}
+              m5Candles={m5Candles}
               instrument={instrument}
             />
           </div>

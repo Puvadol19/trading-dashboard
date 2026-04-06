@@ -39,6 +39,8 @@ export default function TradingDashboard() {
 
   const {
     candles,
+    m1Candles,
+    m5Candles,
     currentTick,
     slope,
     fastSlope,
@@ -124,6 +126,8 @@ export default function TradingDashboard() {
         <div className="flex-1 min-h-[250px] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-border">
           <TradingChart
             candles={candles}
+            m1Candles={m1Candles}
+            m5Candles={m5Candles}
             slope={slope}
             trendLines={showTrendLines ? trendLines : []}
             instrument={instrument}
