@@ -303,11 +303,14 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
 
       {/* Chart body */}
       <div className="flex-1 min-h-0 relative">
-        {/* Candles view */}
+        {/* Candles view — keep mounted so lightweight-charts ResizeObserver stays active */}
         <div
           ref={chartContainerRef}
           className="absolute inset-0"
-          style={{ display: chartMode === "candles" ? "block" : "none" }}
+          style={{
+            visibility: chartMode === "candles" ? "visible" : "hidden",
+            pointerEvents: chartMode === "candles" ? "auto" : "none",
+          }}
         />
         {/* MO Linear view */}
         {chartMode === "mo_linear" && (
