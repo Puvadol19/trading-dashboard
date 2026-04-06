@@ -48,15 +48,19 @@ export async function POST(req: Request) {
 
 Answer questions using this live data. Be concise. Respond in the same language the user uses (Thai or English). Always note this is analysis, not financial advice.`;
 
-  const response = await fetch("https://gateway.ai.vercel.com/v1/gq8cqkfk3mgjwtgm6frge35w/v0-trading/openai/chat/completions", {
+  const apiKey = process.env.OPENROUTER_API_KEY ?? "";
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY ?? ""}`,
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://trading-dashboard.vercel.app",
+      "X-Title": "Trading Dashboard AI",
     },
     signal: req.signal,
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "google/gemini-2.0-flash-exp:free",
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
