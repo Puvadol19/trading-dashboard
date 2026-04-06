@@ -50,34 +50,52 @@ Answer questions using this live data. Be concise. Respond in the same language 
 
   const apiKey = process.env.OPENROUTER_API_KEY ?? "";
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://trading-dashboard.vercel.app",
-      "X-Title": "Trading Dashboard AI",
-    },
-    signal: req.signal,
-    body: JSON.stringify({
-      model: "google/gemini-2.0-flash-exp:free",
-      stream: true,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    return new Response(JSON.stringify({ error }), {
-      status: response.status,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (!apiKey) {
+    return new Response(
+      `data: ${JSON.stringify({ error: "OPENROUTER_API_KEY ยังไม่ได้ตั้งค่า — ไปที่ Settings > Vars แล้วเพิ่ม OPENROUTER_API_KEY" })}\n\ndata: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
   }
 
-  // Stream the OpenAI SSE response directly to the client
+  let response: Response;
+  try {
+    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://trading-dashboard.vercel.app",
+        "X-Title": "Trading Dashboard AI",
+      },
+      signal: req.signal,
+      body: JSON.stringify({
+        model: "google/gemini-2.0-flash-exp:free",
+        stream: true,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages,
+        ],
+      }),
+    });
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : "Network error";
+    return new Response(
+      `data: ${JSON.stringify({ choices: [{ delta: { content: `เชื่อมต่อ OpenRouter ไม่ได้: ${msg}` } }] })}\n\ndata: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+  }
+
+  if (!response.ok) {
+    const errText = await response.text();
+    let detail = errText;
+    try { detail = JSON.parse(errText)?.error?.message ?? errText; } catch { /* ok */ }
+    return new Response(
+      `data: ${JSON.stringify({ choices: [{ delta: { content: `OpenRouter error ${response.status}: ${detail}` } }] })}\n\ndata: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } }
+    );
+  }
+
+  // Stream SSE response directly to client
   return new Response(response.body, {
     headers: {
       "Content-Type": "text/event-stream",

@@ -144,8 +144,14 @@ export function AiChatPanel({
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setError("เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
-      setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+      const detail = err instanceof Error ? err.message : "Unknown error";
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, content: `เกิดข้อผิดพลาด: ${detail}` }
+            : m
+        )
+      );
     } finally {
       setIsLoading(false);
     }
@@ -211,7 +217,7 @@ export function AiChatPanel({
             <div>
               <p className="text-xs font-mono text-foreground mb-1">ถามอะไรเกี่ยวกับกราฟได้เลย</p>
               <p className="text-[10px] text-muted-foreground font-mono">
-                AI รู้ข้อมูล live ของ {instrument.replace("_", "/")} ทั้งหมด
+                AI รู้ข้อมูล live ข���ง {instrument.replace("_", "/")} ทั้งหมด
               </p>
             </div>
             <div className="flex flex-col gap-1.5 w-full">
