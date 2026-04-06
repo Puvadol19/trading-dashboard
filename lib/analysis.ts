@@ -1,4 +1,4 @@
-import type { CandleData, SlopeAnalysis, TickVelocity, RSIData, MACDData, BollingerBands, TrendLine } from "./types";
+import type { CandleData, SlopeAnalysis, TickVelocity, RSIData, MACDData, BollingerBands, TrendLine, MOLinearResult } from "./types";
 
 const SIDEWAY_THRESHOLD = 0.00002;
 const HIGH_VELOCITY_THRESHOLD = 3.0;
@@ -369,6 +369,145 @@ export function calculateTrendLines(candles: CandleData[], lookback: number = 20
   }
 
   return lines;
+}
+
+// ── MO_linear Indicator ──────────────────────────────────────────────────
+
+/**
+ * Pine-like linreg(series, length, offset):
+ * Fits OLS on a window of `length` bars, evaluates at x = (length-1) - offset.
+ * Matches the TradingView linreg() behaviour.
+ */
+function linregPine(series: number[], length: number, offset: number): number[] {
+  const n = series.length;
+  const out = new Array(n).fill(NaN);
+  if (length < 2) return out;
+
+  const xArr = Array.from({ length }, (_, i) => i);
+  const xMean = (length - 1) / 2;
+  const denom = xArr.reduce((s, x) => s + (x - xMean) ** 2, 0);
+  const evalX = (length - 1) - offset;
+
+  for (let i = length - 1; i < n; i++) {
+    const yWin = series.slice(i - length + 1, i + 1);
+    const yMean = yWin.reduce((a, b) => a + b, 0) / length;
+    const slope = xArr.reduce((s, x, j) => s + (x - xMean) * (yWin[j] - yMean), 0) / denom;
+    const intercept = yMean - slope * xMean;
+    out[i] = slope * evalX + intercept;
+  }
+  return out;
+}
+
+function rollingMax(arr: number[], period: number): number[] {
+  return arr.map((_, i) => {
+    const slice = arr.slice(Math.max(0, i - period + 1), i + 1).filter((v) => !isNaN(v));
+    return slice.length ? Math.max(...slice) : NaN;
+  });
+}
+
+function rollingMin(arr: number[], period: number): number[] {
+  return arr.map((_, i) => {
+    const slice = arr.slice(Math.max(0, i - period + 1), i + 1).filter((v) => !isNaN(v));
+    return slice.length ? Math.min(...slice) : NaN;
+  });
+}
+
+function addArr(a: number[], b: number[]): number[] {
+  return a.map((v, i) => v + b[i]);
+}
+function subArr(a: number[], b: number[]): number[] {
+  return a.map((v, i) => v - b[i]);
+}
+function scaleArr(a: number[], s: number): number[] {
+  return a.map((v) => v * s);
+}
+function avgArrs(...arrs: number[][]): number[] {
+  const len = arrs[0].length;
+  return Array.from({ length: len }, (_, i) => {
+    const vals = arrs.map((a) => a[i]).filter((v) => !isNaN(v));
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : NaN;
+  });
+}
+
+export function calculateMOLinear(
+  candles: CandleData[],
+  period: number = 5,
+  dcPeriod: number = 5
+): MOLinearResult | null {
+  if (candles.length < period + dcPeriod + 10) return null;
+
+  const close = candles.map((c) => c.close);
+  const high  = candles.map((c) => c.high);
+  const low   = candles.map((c) => c.low);
+  const open  = candles.map((c) => c.open);
+
+  // Panel 1: a, b on real prices
+  const a = linregPine(close, period, period);
+  const b = linregPine(close, period, 0);
+  const e = linregPine(high, 9, 9);
+  const d = linregPine(low,  9, 9);
+  const h = linregPine(e, period, 0);
+  const g = linregPine(d, period, 0);
+
+  // Donchian channels of a and b
+  const upperDcA = rollingMax(a, dcPeriod);
+  const lowerDcA = rollingMin(a, dcPeriod);
+  const upperDcB = rollingMax(b, dcPeriod);
+  const lowerDcB = rollingMin(b, dcPeriod);
+
+  // k = avg(mid_a, mid_b)
+  const midA = scaleArr(addArr(upperDcA, lowerDcA), 0.5);
+  const midB = scaleArr(addArr(upperDcB, lowerDcB), 0.5);
+  const k    = avgArrs(midA, midB);
+
+  // Donchian of k
+  const upperDcK = rollingMax(k, dcPeriod);
+  const lowerDcK = rollingMin(k, dcPeriod);
+
+  // Normalize prices by k (Panel 2)
+  const openK  = subArr(open,  k);
+  const highK  = subArr(high,  k);
+  const lowK   = subArr(low,   k);
+  const closeK = subArr(close, k);
+
+  // Panel 2: a1, b1 on normalized prices
+  const a1 = linregPine(closeK, period, period);
+  const b1 = linregPine(closeK, period, 0);
+  const e1 = linregPine(highK, 9, 9);
+  const d1 = linregPine(lowK,  9, 9);
+  const h1 = linregPine(e1, period, 0);
+  const g1 = linregPine(d1, period, 0);
+
+  const upperDcA1 = rollingMax(a1, dcPeriod);
+  const lowerDcA1 = rollingMin(a1, dcPeriod);
+  const upperDcB1 = rollingMax(b1, dcPeriod);
+  const lowerDcB1 = rollingMin(b1, dcPeriod);
+
+  const midA1 = scaleArr(addArr(upperDcA1, lowerDcA1), 0.5);
+  const midB1 = scaleArr(addArr(upperDcB1, lowerDcB1), 0.5);
+  const k1    = avgArrs(midA1, midB1);
+
+  const upperDcK1 = rollingMax(k1, dcPeriod);
+  const lowerDcK1 = rollingMin(k1, dcPeriod);
+
+  return {
+    // Panel 1 lines
+    midA, midB, k,
+    // Panel 1 fills
+    upperDcA, lowerDcA,
+    upperDcB, lowerDcB,
+    upperDcK, lowerDcK,
+    h, g,
+    // Panel 2 candles (normalized)
+    openK, highK, lowK, closeK,
+    // Panel 2 lines
+    midA1, midB1, k1,
+    // Panel 2 fills
+    upperDcA1, lowerDcA1,
+    upperDcB1, lowerDcB1,
+    upperDcK1, lowerDcK1,
+    h1, g1,
+  };
 }
 
 // ── Breakout Detection ───────────────────────────────────────────────────
