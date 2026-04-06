@@ -68,7 +68,7 @@ Answer questions using this live data. Be concise. Respond in the same language 
         "X-Title": "Trading Dashboard AI",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-exp:free",
+        model: "deepseek/deepseek-r1:free",
         stream: true,
         messages: [
           { role: "system", content: systemPrompt },
