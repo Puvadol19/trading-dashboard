@@ -314,7 +314,7 @@ export function TradingChart({ candles, slope, trendLines = [], instrument, slop
         />
         {/* MO Linear view */}
         {chartMode === "mo_linear" && (
-          <div className="absolute inset-0">
+          <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
             <MoLinearChart
               candles={candles}
               period={moPeriod}

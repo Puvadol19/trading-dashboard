@@ -168,6 +168,43 @@ function drawTimeAxis(dc: DC, times: number[]) {
   ctx.restore();
 }
 
+// ── Legend subcomponent ───────────────────────────────────────────────────
+function Legend({ items }: { items: { col: string; a: number; lbl: string }[] }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 22,
+        left: 6,
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "1px 10px",
+        pointerEvents: "none",
+        zIndex: 1,
+      }}
+    >
+      {items.map((l) => (
+        <span
+          key={l.lbl}
+          style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: C.text, whiteSpace: "nowrap" }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              width: 14,
+              height: 7,
+              borderRadius: 2,
+              background: rgba(l.col, l.a),
+              flexShrink: 0,
+            }}
+          />
+          {l.lbl}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 export function MoLinearChart({
   candles,
@@ -403,95 +440,50 @@ export function MoLinearChart({
   }
 
   return (
+    // Outer wrapper: position relative so children can use absolute positioning
     <div
-      className="flex flex-col w-full h-full"
-      style={{ background: C.bg, overflow: "hidden" }}
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        background: C.bg,
+        overflow: "hidden",
+      }}
     >
-      {/* ── Panel 1 ── */}
+      {/* ── Panel 1: top 58% ── */}
       <div
         ref={panel1Ref}
-        style={{ flex: "57 57 0px", minHeight: 0, position: "relative" }}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, height: "58%" }}
       >
         <canvas
           ref={canvas1Ref}
           style={{ display: "block", position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }}
         />
-        <div
-          style={{
-            position: "absolute",
-            top: 22,
-            left: 6,
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "0px 10px",
-            pointerEvents: "none",
-            zIndex: 1,
-          }}
-        >
-          {leg1.map((l) => (
-            <span
-              key={l.lbl}
-              style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: C.text, whiteSpace: "nowrap" }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 14,
-                  height: 7,
-                  borderRadius: 2,
-                  background: rgba(l.col, l.a),
-                  flexShrink: 0,
-                }}
-              />
-              {l.lbl}
-            </span>
-          ))}
-        </div>
+        <Legend items={leg1} />
       </div>
 
       {/* Divider */}
-      <div style={{ height: 2, background: "#1e293b", flexShrink: 0 }} />
+      <div
+        style={{
+          position: "absolute",
+          top: "58%",
+          left: 0,
+          right: 0,
+          height: 2,
+          background: "#1e293b",
+        }}
+      />
 
-      {/* ── Panel 2 ── */}
+      {/* ── Panel 2: bottom 41% ── */}
       <div
         ref={panel2Ref}
-        style={{ flex: "40 40 0px", minHeight: 0, position: "relative" }}
+        style={{ position: "absolute", top: "calc(58% + 2px)", left: 0, right: 0, bottom: 0 }}
       >
         <canvas
           ref={canvas2Ref}
           style={{ display: "block", position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }}
         />
-        <div
-          style={{
-            position: "absolute",
-            top: 22,
-            left: 6,
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "0px 10px",
-            pointerEvents: "none",
-            zIndex: 1,
-          }}
-        >
-          {leg2.map((l) => (
-            <span
-              key={l.lbl}
-              style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: C.text, whiteSpace: "nowrap" }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 14,
-                  height: 7,
-                  borderRadius: 2,
-                  background: rgba(l.col, l.a),
-                  flexShrink: 0,
-                }}
-              />
-              {l.lbl}
-            </span>
-          ))}
-        </div>
+        <Legend items={leg2} />
       </div>
     </div>
   );
