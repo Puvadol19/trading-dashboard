@@ -167,7 +167,8 @@ export function MoLinearChart({ candles, period = 5, dcPeriod = 5, instrument }:
 
     // ── Panel 1 ──────────────────────────────────────────────────────────
     {
-      const w = c1.width; const h = c1.height;
+      const dpr = window.devicePixelRatio || 1;
+      const w = c1.width / dpr; const h = c1.height / dpr;
       const pL = 8, pR = 62, pT = 20, pB = 24;
 
       const allP = candles.flatMap((c) => [c.high, c.low]);
@@ -207,7 +208,8 @@ export function MoLinearChart({ candles, period = 5, dcPeriod = 5, instrument }:
 
     // ── Panel 2 ──────────────────────────────────────────────────────────
     {
-      const w = c2.width; const h = c2.height;
+      const dpr = window.devicePixelRatio || 1;
+      const w = c2.width / dpr; const h = c2.height / dpr;
       const pL = 8, pR = 62, pT = 20, pB = 24;
 
       const allV = [
@@ -255,26 +257,47 @@ export function MoLinearChart({ candles, period = 5, dcPeriod = 5, instrument }:
   }, [candles, result, period, dcPeriod, instrument]);
 
   // ── Resize + initial draw ─────────────────────────────────────────────────
+  const panel1Ref = useRef<HTMLDivElement>(null);
+  const panel2Ref = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const container = containerRef.current;
+    const p1 = panel1Ref.current;
+    const p2 = panel2Ref.current;
     const c1 = canvas1Ref.current;
     const c2 = canvas2Ref.current;
-    if (!container || !c1 || !c2) return;
+    if (!p1 || !p2 || !c1 || !c2) return;
 
     const resize = () => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      c1.width  = w;
-      c1.height = Math.round(h * 0.57);
-      c2.width  = w;
-      c2.height = Math.round(h * 0.40);
+      const dpr = window.devicePixelRatio || 1;
+
+      const w1 = p1.clientWidth;
+      const h1 = p1.clientHeight;
+      if (w1 > 0 && h1 > 0) {
+        // Assigning width/height resets the context (clears scale accumulation)
+        c1.width  = Math.round(w1 * dpr);
+        c1.height = Math.round(h1 * dpr);
+        const ctx1 = c1.getContext("2d");
+        if (ctx1) { ctx1.setTransform(1, 0, 0, 1, 0, 0); ctx1.scale(dpr, dpr); }
+      }
+
+      const w2 = p2.clientWidth;
+      const h2 = p2.clientHeight;
+      if (w2 > 0 && h2 > 0) {
+        c2.width  = Math.round(w2 * dpr);
+        c2.height = Math.round(h2 * dpr);
+        const ctx2 = c2.getContext("2d");
+        if (ctx2) { ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.scale(dpr, dpr); }
+      }
+
       draw();
     };
 
     const ro = new ResizeObserver(resize);
-    ro.observe(container);
-    resize(); // initial
-    return () => ro.disconnect();
+    ro.observe(p1);
+    ro.observe(p2);
+    // Use rAF for initial call so layout is complete
+    const raf = requestAnimationFrame(resize);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, [draw]);
 
   // redraw when data/params change
@@ -311,15 +334,18 @@ export function MoLinearChart({ candles, period = 5, dcPeriod = 5, instrument }:
   }
 
   return (
-    <div ref={containerRef} className="flex flex-col w-full h-full" style={{ background: C.bg }}>
-      {/* Panel 1 */}
-      <div className="relative" style={{ flex: "57 57 0%", minHeight: 0 }}>
-        <canvas ref={canvas1Ref} style={{ display: "block", width: "100%", height: "100%" }} />
-        {/* Legend top-left */}
-        <div className="absolute top-5 left-2 grid grid-cols-2 gap-x-3 gap-y-0 pointer-events-none">
+    <div ref={containerRef} className="flex flex-col w-full h-full overflow-hidden" style={{ background: C.bg }}>
+      {/* Panel 1 — takes 57% of the height */}
+      <div ref={panel1Ref} className="relative overflow-hidden" style={{ flex: "57 57 0%", minHeight: 0 }}>
+        <canvas
+          ref={canvas1Ref}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        />
+        {/* Legend */}
+        <div className="absolute top-5 left-2 grid grid-cols-2 gap-x-3 gap-y-0 pointer-events-none" style={{ zIndex: 1 }}>
           {leg1.map((l) => (
             <span key={l.lbl} className="flex items-center gap-1" style={{ fontSize: 9, color: C.text }}>
-              <span style={{ display:"inline-block", width:12, height:8, borderRadius:2, background: rgba(l.col, l.a) }} />
+              <span style={{ display: "inline-block", width: 12, height: 8, borderRadius: 2, background: rgba(l.col, l.a) }} />
               {l.lbl}
             </span>
           ))}
@@ -329,14 +355,17 @@ export function MoLinearChart({ candles, period = 5, dcPeriod = 5, instrument }:
       {/* Divider */}
       <div style={{ height: 2, background: "#1e293b", flexShrink: 0 }} />
 
-      {/* Panel 2 */}
-      <div className="relative" style={{ flex: "40 40 0%", minHeight: 0 }}>
-        <canvas ref={canvas2Ref} style={{ display: "block", width: "100%", height: "100%" }} />
-        {/* Legend top-left */}
-        <div className="absolute top-5 left-2 grid grid-cols-2 gap-x-3 gap-y-0 pointer-events-none">
+      {/* Panel 2 — takes 40% of the height */}
+      <div ref={panel2Ref} className="relative overflow-hidden" style={{ flex: "40 40 0%", minHeight: 0 }}>
+        <canvas
+          ref={canvas2Ref}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        />
+        {/* Legend */}
+        <div className="absolute top-5 left-2 grid grid-cols-2 gap-x-3 gap-y-0 pointer-events-none" style={{ zIndex: 1 }}>
           {leg2.map((l) => (
             <span key={l.lbl} className="flex items-center gap-1" style={{ fontSize: 9, color: C.text }}>
-              <span style={{ display:"inline-block", width:12, height:8, borderRadius:2, background: rgba(l.col, l.a) }} />
+              <span style={{ display: "inline-block", width: 12, height: 8, borderRadius: 2, background: rgba(l.col, l.a) }} />
               {l.lbl}
             </span>
           ))}
